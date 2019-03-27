@@ -23,3 +23,6 @@ tests:
     - HUnit
     - pecoff
 stability: unstable
+
+default-extensions:
+  LambdaCase

@@ -238,23 +238,27 @@ imageFileMachine 0x01a8 = IMAGE_FILE_MACHINE_SH5
 imageFileMachine 0x01c2 = IMAGE_FILE_MACHINE_THUMB
 imageFileMachine 0x0169 = IMAGE_FILE_MACHINE_WCEMIPSV2
            
-data PecoffReader = PecoffReader
-                  { isPE32Plus     :: Bool
-                  , getAddress     :: Get Word64
-                  }
+-- data PecoffReader = PecoffReader
+--                   { isPE32Plus     :: Bool
+--                   , getAddress     :: Get Word64
+--                   }
 
-pecoffReader :: Word16 -> PecoffReader
-pecoffReader 0x020b = PecoffReader  True getWord64le
-pecoffReader 0x010b = PecoffReader False (liftM fromIntegral getWord32le)
-pecoffReader _ = error "Invalid magic number for image file optional header."                         
+type AdressGetter = Get Word64
+
+addressGetter :: Bool -> AdressGetter
+addressGetter True = getWord64le
+addressGetter False = liftM fromIntegral getWord32le
+
+checkIfPE32Plus :: Word16 -> Bool
+checkIfPE32Plus = \case
+  0x020b -> True
+  0x010b -> False
+  _      -> error "Invalid magic number for image file optional header."                         
                    
 data Pecoff = Pecoff
             { coffHeader           :: CoffHeader
-            , pEntryPointAddress   :: Word64                       -- ^ Entry point address.
-            , pImageBase           :: Word64                       -- ^ Default load base for image.
-            , pSubsystem           :: IMAGE_SUBSYSTEM              -- ^ Subsystem required to run this image.
-            , pDllCharacteristics  :: [IMAGE_DLL_CHARACTERISTICS]  -- ^ DLL flags.
-            , pSections            :: [PecoffSection]              -- ^ Sections contained in this PE/COFF object.
+            , optionalHeader       :: OptionalHeader
+            , pSections            :: [PecoffSection]  -- ^ Sections contained in this PE/COFF object.
             } deriving (Show, Eq)
 
 type Offset = Int
@@ -268,9 +272,18 @@ data CoffHeader = CoffHeader
   , symbolCount         :: Int
   , optionalHeaderSize  :: Int
   , fileCharacteristics :: [IMAGE_FILE_CHARACTERISTICS]
-  } deriving (Show, Eq)
+  } 
+  deriving (Show, Eq)
 
-type ImageFileOptionalHeader = (PecoffReader, Word64, Word64, IMAGE_SUBSYSTEM, [IMAGE_DLL_CHARACTERISTICS])
+-- | Optional header with information for loader. Despite its name it is required for all image files. It is optional e.g. for object files.
+data OptionalHeader = OptionalHeader 
+  { isPE32Plus        :: Bool
+  , entryPointAddress :: Word64           -- ^ Entry point address, relative to the image base.
+  , imageBase         :: Word64           -- ^ Preferred load base address of image.
+  , subsystem         :: IMAGE_SUBSYSTEM  -- ^ Subsystem required to run this image. 
+  , dllCharactertics  :: [IMAGE_DLL_CHARACTERISTICS]
+  }
+  deriving (Show, Eq)
 
 getImageFileHeader :: Get CoffHeader
 getImageFileHeader = do
@@ -292,10 +305,11 @@ getImageFileHeader = do
     }
   -- return (machine, numsect, attribs)
 
-getImageFileOptionalHeader :: Get ImageFileOptionalHeader
-getImageFileOptionalHeader = do
+getOptionalHeader :: Get OptionalHeader
+getOptionalHeader = do
   magic                   <- getWord16le
-  pr                      <- return $ pecoffReader magic
+  let isPE32Plus          = checkIfPE32Plus magic
+  let getAddress          = addressGetter isPE32Plus
   majorLinkerVersion      <- getWord8
   minorLinkerVersion      <- getWord8
   sizeOfCode              <- getWord32le
@@ -303,8 +317,8 @@ getImageFileOptionalHeader = do
   sizeOfUninitializedData <- getWord32le
   addressOfEntryPoint     <- liftM fromIntegral getWord32le
   baseOfCode              <- getWord32le
-  baseOfData              <- if isPE32Plus pr then return 0 else getWord32le
-  imageBase               <- getAddress pr
+  baseOfData              <- if isPE32Plus then return 0 else getWord32le
+  imageBase               <- getAddress
   sectionAlignment        <- getWord32le
   fileAlignment           <- getWord32le
   majorOSVersion          <- getWord16le
@@ -319,10 +333,10 @@ getImageFileOptionalHeader = do
   checksum                <- getWord32le
   subsystem               <- liftM imageSubsystem $ getWord16le
   dllCharacteristics      <- liftM imageDllCharacteristics $ getWord16le
-  sizeOfStackReserve      <- getAddress pr
-  sizeOfStackCommit       <- getAddress pr
-  sizeOfHeapReserve       <- getAddress pr
-  sizeOfHeapCommit        <- getAddress pr
+  sizeOfStackReserve      <- getAddress
+  sizeOfStackCommit       <- getAddress
+  sizeOfHeapReserve       <- getAddress
+  sizeOfHeapCommit        <- getAddress
   loaderFlags             <- getWord32le
   numberOfRvaAndSizes     <- liftM fromIntegral $ getWord32le
   imageDataDirectory      <- sequence $ replicate numberOfRvaAndSizes (liftM2 (,) getWord32le getWord32le)
@@ -343,7 +357,13 @@ getImageFileOptionalHeader = do
       iat                   = if length imageDataDirectory > 12 then Just (imageDataDirectory !! 12) else Nothing
       delayImportDescriptor = if length imageDataDirectory > 13 then Just (imageDataDirectory !! 13) else Nothing
       clrRuntimeHeader      = if length imageDataDirectory > 14 then Just (imageDataDirectory !! 14) else Nothing
-  return (pr, addressOfEntryPoint, imageBase, subsystem, dllCharacteristics)
+  pure $ OptionalHeader
+    { isPE32Plus = isPE32Plus
+    , entryPointAddress = addressOfEntryPoint
+    , imageBase = imageBase
+    , subsystem = subsystem
+    , dllCharactertics = dllCharacteristics
+    }
 
 getCharUTF8 :: Get Word32
 getCharUTF8 = do
@@ -400,8 +420,8 @@ data PecoffSection = PecoffSection
                    , psectRawData         :: B.ByteString                -- ^ Raw data for section.
                    } deriving (Show, Eq)
 
-getSectionHeader ::  PecoffReader -> C.ByteString -> Get PecoffSection
-getSectionHeader pr bs = do
+getSectionHeader ::  C.ByteString -> Get PecoffSection
+getSectionHeader bs = do
   full_name            <- getByteString 8
   name                 <- return $ runGet getSectionName $ L.fromChunks[full_name]
   virtualSize          <- liftM fromIntegral getWord32le
@@ -440,15 +460,12 @@ getPecoff bs = do
       fail "Invalid magic number in PE header."
    else do
      coffHeader <- getImageFileHeader
-     (pr, addressOfEntryPoint, imageBase, subsystem, dllCharacteristics) <- getImageFileOptionalHeader
-     sections                                                            <- sequence $ replicate (sectionCount coffHeader) (getSectionHeader pr bs)
+     optionalHeader <- getOptionalHeader
+     sections <- sequence $ replicate (sectionCount coffHeader) (getSectionHeader bs)
      return $ Pecoff
-                { coffHeader           = coffHeader
-                , pEntryPointAddress   = addressOfEntryPoint
-                , pImageBase           = imageBase
-                , pSubsystem           = subsystem
-                , pDllCharacteristics  = dllCharacteristics
-                , pSections            = sections
+                { coffHeader     = coffHeader
+                , optionalHeader = optionalHeader
+                , pSections      = sections
                 }
      
 -- | Parse the ByteString of a PE/COFF file into a Pecoff record.
