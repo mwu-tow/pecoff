@@ -247,8 +247,7 @@ pecoffReader 0x010b = PecoffReader False (liftM fromIntegral getWord32le)
 pecoffReader _ = error "Invalid magic number for image file optional header."                         
                    
 data Pecoff = Pecoff
-            { pMachine             :: IMAGE_FILE_MACHINE           -- ^ Machine type.
-            , pFileCharacteristics :: [IMAGE_FILE_CHARACTERISTICS] -- ^ File flags.
+            { coffHeader           :: CoffHeader
             , pEntryPointAddress   :: Word64                       -- ^ Entry point address.
             , pImageBase           :: Word64                       -- ^ Default load base for image.
             , pSubsystem           :: IMAGE_SUBSYSTEM              -- ^ Subsystem required to run this image.
@@ -256,11 +255,21 @@ data Pecoff = Pecoff
             , pSections            :: [PecoffSection]              -- ^ Sections contained in this PE/COFF object.
             } deriving (Show, Eq)
 
-type ImageFileHeader = (IMAGE_FILE_MACHINE, Int, [IMAGE_FILE_CHARACTERISTICS])
+type Offset = Int
+
+data CoffHeader = CoffHeader
+  { machine             :: IMAGE_FILE_MACHINE
+  , sectionCount        :: Int
+  , timestamp           :: Int
+  , symbolTableOffset   :: Offset
+  , symbolCount         :: Int
+  , optionalHeaderSize  :: Int
+  , fileCharacteristics :: [IMAGE_FILE_CHARACTERISTICS]
+  } deriving (Show, Eq)
 
 type ImageFileOptionalHeader = (PecoffReader, Word64, Word64, IMAGE_SUBSYSTEM, [IMAGE_DLL_CHARACTERISTICS])
 
-getImageFileHeader :: Get ImageFileHeader
+getImageFileHeader :: Get CoffHeader
 getImageFileHeader = do
   machine <- liftM imageFileMachine getWord16le
   numsect <- liftM fromIntegral getWord16le
@@ -269,7 +278,16 @@ getImageFileHeader = do
   symtcnt <- getWord32le
   szopthd <- getWord16le
   attribs <- liftM imageFileCharacteristics getWord16le
-  return (machine, numsect, attribs)
+  pure $ CoffHeader
+    { machine             = machine
+    , sectionCount        = numsect
+    , timestamp           = fromIntegral tmstamp
+    , symbolTableOffset   = fromIntegral symtoff
+    , symbolCount         = fromIntegral symtcnt
+    , optionalHeaderSize  = fromIntegral szopthd
+    , fileCharacteristics = attribs
+    }
+  -- return (machine, numsect, attribs)
 
 getImageFileOptionalHeader :: Get ImageFileOptionalHeader
 getImageFileOptionalHeader = do
@@ -418,12 +436,11 @@ getPecoff bs = do
   if magic /= "PE\0\0" then
       fail "Invalid magic number in PE header."
    else do
-     (machine, numsects, fileCharacteristics)                            <- getImageFileHeader
+     coffHeader <- getImageFileHeader
      (pr, addressOfEntryPoint, imageBase, subsystem, dllCharacteristics) <- getImageFileOptionalHeader
-     sections                                                            <- sequence $ replicate numsects (getSectionHeader pr bs)
+     sections                                                            <- sequence $ replicate (sectionCount coffHeader) (getSectionHeader pr bs)
      return $ Pecoff
-                { pMachine             = machine
-                , pFileCharacteristics = fileCharacteristics
+                { coffHeader           = coffHeader
                 , pEntryPointAddress   = addressOfEntryPoint
                 , pImageBase           = imageBase
                 , pSubsystem           = subsystem
