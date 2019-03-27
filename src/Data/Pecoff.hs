@@ -34,6 +34,8 @@ data IMAGE_SUBSYSTEM
     | IMAGE_SUBSYSTEM_EFI_ROM
     | IMAGE_SUBSYSTEM_XBOX
     deriving (Show, Eq)
+
+imageSubsystem :: Word16 -> IMAGE_SUBSYSTEM
 imageSubsystem  0 = IMAGE_SUBSYSTEM_UNKNOWN
 imageSubsystem  1 = IMAGE_SUBSYSTEM_NATIVE
 imageSubsystem  2 = IMAGE_SUBSYSTEM_WINDOWS_GUI
@@ -86,6 +88,8 @@ data IMAGE_SCN_CHARACTERISTICS
     | IMAGE_SCN_MEM_READ
     | IMAGE_SCN_MEM_WRITE
     deriving (Show, Eq)
+
+imageScnCharacteristics :: Word32 -> [IMAGE_SCN_CHARACTERISTICS]
 imageScnCharacteristics n = imageScnAlign_ ((n .&. 0x00f00000) `shiftR` 20) ++ imageScnCharacteristics_ n 32
                           where imageScnAlign_ 0x0 = []
                                 imageScnAlign_ 0x1 = [IMAGE_SCN_ALIGN_1BYTES]
@@ -135,6 +139,8 @@ data IMAGE_DLL_CHARACTERISTICS
     | IMAGE_DLL_CHARACTERISTICS_WDM_DRIVER
     | IMAGE_DLL_CHARACTERISTICS_TERMINAL_SERVER_AWARE
     deriving (Show, Eq)
+
+imageDllCharacteristics :: Word16 -> [IMAGE_DLL_CHARACTERISTICS]
 imageDllCharacteristics n = imageDllCharacteristics_ n 16
                             where imageDllCharacteristics_ n  0 = []
                                   imageDllCharacteristics_ n  7 | testBit n  6 = IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE          : imageDllCharacteristics_ n  6
@@ -164,6 +170,8 @@ data IMAGE_FILE_CHARACTERISTICS
     | IMAGE_FILE_UP_SYSTEM_ONLY
     | IMAGE_FILE_BYTES_REVERSED_HI
     deriving (Show, Eq)
+
+imageFileCharacteristics :: Word16 -> [IMAGE_FILE_CHARACTERISTICS]
 imageFileCharacteristics n = imageFileCharacteristics_ n 16
                             where imageFileCharacteristics_ n  0 = []
                                   imageFileCharacteristics_ n  1 | testBit n  0 = IMAGE_FILE_RELOCS_STRIPPED         : imageFileCharacteristics_ n 0
@@ -205,6 +213,8 @@ data IMAGE_FILE_MACHINE
     | IMAGE_FILE_MACHINE_THUMB
     | IMAGE_FILE_MACHINE_WCEMIPSV2
     deriving (Show, Eq)
+
+imageFileMachine :: Word16 -> IMAGE_FILE_MACHINE
 imageFileMachine 0x0000 = IMAGE_FILE_MACHINE_UNKNOWN
 imageFileMachine 0x01d3 = IMAGE_FILE_MACHINE_AM33
 imageFileMachine 0x8664 = IMAGE_FILE_MACHINE_AMD64
@@ -230,6 +240,8 @@ data PecoffReader = PecoffReader
                   { isPE32Plus     :: Bool
                   , getAddress     :: Get Word64
                   }
+
+pecoffReader :: Word16 -> PecoffReader
 pecoffReader 0x020b = PecoffReader  True getWord64le
 pecoffReader 0x010b = PecoffReader False (liftM fromIntegral getWord32le)
 pecoffReader _ = error "Invalid magic number for image file optional header."                         
@@ -244,6 +256,11 @@ data Pecoff = Pecoff
             , pSections            :: [PecoffSection]              -- ^ Sections contained in this PE/COFF object.
             } deriving (Show, Eq)
 
+type ImageFileHeader = (IMAGE_FILE_MACHINE, Int, [IMAGE_FILE_CHARACTERISTICS])
+
+type ImageFileOptionalHeader = (PecoffReader, Word64, Word64, IMAGE_SUBSYSTEM, [IMAGE_DLL_CHARACTERISTICS])
+
+getImageFileHeader :: Get ImageFileHeader
 getImageFileHeader = do
   machine <- liftM imageFileMachine getWord16le
   numsect <- liftM fromIntegral getWord16le
@@ -254,6 +271,7 @@ getImageFileHeader = do
   attribs <- liftM imageFileCharacteristics getWord16le
   return (machine, numsect, attribs)
 
+getImageFileOptionalHeader :: Get ImageFileOptionalHeader
 getImageFileOptionalHeader = do
   magic                   <- getWord16le
   pr                      <- return $ pecoffReader magic
@@ -306,6 +324,7 @@ getImageFileOptionalHeader = do
       clrRuntimeHeader      = if length imageDataDirectory > 14 then Just (imageDataDirectory !! 14) else Nothing
   return (pr, addressOfEntryPoint, imageBase, subsystem, dllCharacteristics)
 
+getCharUTF8 :: Get Word32
 getCharUTF8 = do
   let getCharUTF82 b1 = do
         b2 <- liftM fromIntegral getWord8 :: Get Word32
@@ -336,6 +355,7 @@ getCharUTF8 = do
     n | n .&. 0xf8 == 0xf0 -> getCharUTF84 n
     _                      -> fail "Invalid first byte in UTF8 string."
 
+getSectionName :: Get String
 getSectionName = liftM (map (chr . fromIntegral)) getSectionName_
     where getSectionName_ = do
             empty <- isEmpty
@@ -359,6 +379,7 @@ data PecoffSection = PecoffSection
                    , psectRawData         :: B.ByteString                -- ^ Raw data for section.
                    } deriving (Show, Eq)
 
+getSectionHeader ::  PecoffReader -> C.ByteString -> Get PecoffSection
 getSectionHeader pr bs = do
   full_name            <- getByteString 8
   name                 <- return $ runGet getSectionName $ L.fromChunks[full_name]
@@ -390,6 +411,7 @@ getPeOffset = do
    else
      fail "Invalid magic number in MSDOS header."
                
+getPecoff :: C.ByteString -> Get Pecoff
 getPecoff bs = do
   magic <- liftM (C.unpack . B.pack) $ sequence [getWord8, getWord8, getWord8, getWord8]
   if magic /= "PE\0\0" then
