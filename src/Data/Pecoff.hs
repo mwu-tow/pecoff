@@ -402,6 +402,7 @@ getSectionHeader pr bs = do
          , psectRawData         = B.take sizeOfRawData $ B.drop pointerToRawData bs
          }
                           
+getPeOffset :: Get Int
 getPeOffset = do
   magic <- liftM (C.unpack . B.pack) $ sequence [getWord8, getWord8]
   if magic == "MZ" then do
