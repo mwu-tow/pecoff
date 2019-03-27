@@ -12,6 +12,7 @@ dependencies:
 - bytestring
 - containers
 - binary
+- time
 library:
   source-dirs: src
 tests:

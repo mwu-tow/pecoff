@@ -14,6 +14,8 @@ import Data.Char
 import Data.Bits
 import Data.Word
 import Data.Binary.Get
+import Data.Time.Clock
+import Data.Time.Clock.POSIX
 import Control.Monad
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
@@ -257,10 +259,11 @@ data Pecoff = Pecoff
 
 type Offset = Int
 
+-- | Standard COFF File Header
 data CoffHeader = CoffHeader
-  { machine             :: IMAGE_FILE_MACHINE
-  , sectionCount        :: Int
-  , timestamp           :: Int
+  { machine             :: IMAGE_FILE_MACHINE -- ^ Target machine type
+  , sectionCount        :: Int                -- ^ Number of sections.
+  , timestamp           :: UTCTime            -- ^ When the file was created
   , symbolTableOffset   :: Offset
   , symbolCount         :: Int
   , optionalHeaderSize  :: Int
@@ -281,7 +284,7 @@ getImageFileHeader = do
   pure $ CoffHeader
     { machine             = machine
     , sectionCount        = numsect
-    , timestamp           = fromIntegral tmstamp
+    , timestamp           = posixSecondsToUTCTime $ fromInteger $ fromIntegral tmstamp
     , symbolTableOffset   = fromIntegral symtoff
     , symbolCount         = fromIntegral symtcnt
     , optionalHeaderSize  = fromIntegral szopthd
