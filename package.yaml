@@ -26,3 +26,4 @@ stability: unstable
 
 default-extensions:
   LambdaCase
+  DuplicateRecordFields 

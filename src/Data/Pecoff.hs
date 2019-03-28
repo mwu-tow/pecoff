@@ -1,17 +1,24 @@
 -- | Parses a ByteString into a Pecoff record. Parsing of section data currently
 -- left as a todo.
-module Data.Pecoff ( Pecoff(..)
-                   , PecoffSection(..)
-                   , IMAGE_SUBSYSTEM(..)
-                   , IMAGE_SCN_CHARACTERISTICS(..)
-                   , IMAGE_DLL_CHARACTERISTICS(..)
-                   , IMAGE_FILE_CHARACTERISTICS(..)
-                   , IMAGE_FILE_MACHINE(..)
-                   , parsePecoff
-                   ) where
+module Data.Pecoff where
+                  -- ( Pecoff(..)
+                  --  , Section(..)
+                  --  , IMAGE_SUBSYSTEM(..)
+                  --  , IMAGE_SCN_CHARACTERISTICS(..)
+                  --  , IMAGE_DLL_CHARACTERISTICS(..)
+                  --  , IMAGE_FILE_CHARACTERISTICS(..)
+                  --  , IMAGE_FILE_MACHINE(..)
+                  --  , OptionalHeader(..)
+                  --  , CoffHeader(..)
+                  --  , DataDirectory(..)
+                  --  , parsePecoff
+                  --  ) where
 
-import Data.Char
+
 import Data.Bits
+import Data.Char
+import Data.List
+import Data.Int
 import Data.Word
 import Data.Binary.Get
 import Data.Time.Clock
@@ -238,11 +245,6 @@ imageFileMachine 0x01a8 = IMAGE_FILE_MACHINE_SH5
 imageFileMachine 0x01c2 = IMAGE_FILE_MACHINE_THUMB
 imageFileMachine 0x0169 = IMAGE_FILE_MACHINE_WCEMIPSV2
            
--- data PecoffReader = PecoffReader
---                   { isPE32Plus     :: Bool
---                   , getAddress     :: Get Word64
---                   }
-
 type AdressGetter = Get Word64
 
 addressGetter :: Bool -> AdressGetter
@@ -256,52 +258,75 @@ checkIfPE32Plus = \case
   _      -> error "Invalid magic number for image file optional header."                         
                    
 data Pecoff = Pecoff
-            { coffHeader           :: CoffHeader
-            , optionalHeader       :: OptionalHeader
-            , pSections            :: [PecoffSection]  -- ^ Sections contained in this PE/COFF object.
+            { coffHeader     :: CoffHeader
+            , optionalHeader :: OptionalHeader
+            , pSections      :: [Section]  -- ^ Sections contained in this PE/COFF object.
+            , importTables   :: [Import]
             } deriving (Show, Eq)
 
-type Offset = Int
+-- | Assumes 4-byte second count from epoch start
+getTimestamp :: Get UTCTime
+getTimestamp =  (posixSecondsToUTCTime . fromInteger . fromIntegral) <$> getWord32le
 
 -- | Standard COFF File Header
 data CoffHeader = CoffHeader
   { machine             :: IMAGE_FILE_MACHINE -- ^ Target machine type
-  , sectionCount        :: Int                -- ^ Number of sections.
+  , sectionCount        :: Int16              -- ^ Number of sections.
   , timestamp           :: UTCTime            -- ^ When the file was created
-  , symbolTableOffset   :: Offset
-  , symbolCount         :: Int
-  , optionalHeaderSize  :: Int
+  , symbolTableOffset   :: Int32 -- ^ File offset
+  , symbolCount         :: Int32
+  , optionalHeaderSize  :: Int32
   , fileCharacteristics :: [IMAGE_FILE_CHARACTERISTICS]
   } 
   deriving (Show, Eq)
 
+type RelativeVirtualAddress = Int32
+
+getRva :: Get RelativeVirtualAddress
+getRva = fromIntegral <$> getWord32le
+
+data DataDirectory = DataDirectory
+  { address :: RelativeVirtualAddress
+  , size    :: Int64
+  }
+  deriving (Show, Eq)
+
+getDataDirectory :: Get DataDirectory
+getDataDirectory = do
+  rva <- getRva
+  size <- getWord32le
+  pure $ DataDirectory
+    { address = rva
+    , size = fromIntegral size 
+    }
 -- | Optional header with information for loader. Despite its name it is required for all image files. It is optional e.g. for object files.
 data OptionalHeader = OptionalHeader 
   { isPE32Plus        :: Bool
-  , entryPointAddress :: Word64           -- ^ Entry point address, relative to the image base.
-  , imageBase         :: Word64           -- ^ Preferred load base address of image.
+  , entryPointAddress :: Int32            -- ^ Entry point address, relative to the image base.
+  , imageBase         :: Int64            -- ^ Preferred load base address of image.
   , subsystem         :: IMAGE_SUBSYSTEM  -- ^ Subsystem required to run this image. 
   , dllCharactertics  :: [IMAGE_DLL_CHARACTERISTICS]
+  , importTableRVA    :: Maybe DataDirectory
   }
   deriving (Show, Eq)
 
 getImageFileHeader :: Get CoffHeader
 getImageFileHeader = do
-  machine <- liftM imageFileMachine getWord16le
-  numsect <- liftM fromIntegral getWord16le
-  tmstamp <- getWord32le
+  machine <- getWord16le
+  numsect <- getWord16le
+  tmstamp <- getTimestamp
   symtoff <- getWord32le
   symtcnt <- getWord32le
   szopthd <- getWord16le
-  attribs <- liftM imageFileCharacteristics getWord16le
+  attribs <- getWord16le
   pure $ CoffHeader
-    { machine             = machine
-    , sectionCount        = numsect
-    , timestamp           = posixSecondsToUTCTime $ fromInteger $ fromIntegral tmstamp
+    { machine             = imageFileMachine machine
+    , sectionCount        = fromIntegral numsect
+    , timestamp           = tmstamp
     , symbolTableOffset   = fromIntegral symtoff
     , symbolCount         = fromIntegral symtcnt
     , optionalHeaderSize  = fromIntegral szopthd
-    , fileCharacteristics = attribs
+    , fileCharacteristics = imageFileCharacteristics attribs
     }
   -- return (machine, numsect, attribs)
 
@@ -339,7 +364,7 @@ getOptionalHeader = do
   sizeOfHeapCommit        <- getAddress
   loaderFlags             <- getWord32le
   numberOfRvaAndSizes     <- liftM fromIntegral $ getWord32le
-  imageDataDirectory      <- sequence $ replicate numberOfRvaAndSizes (liftM2 (,) getWord32le getWord32le)
+  imageDataDirectory      <- sequence $ replicate numberOfRvaAndSizes getDataDirectory
   skip (8 * (16 - numberOfRvaAndSizes))                           
        
   let exportTable           = if length imageDataDirectory >  0 then Just (imageDataDirectory !!  0) else Nothing
@@ -358,11 +383,12 @@ getOptionalHeader = do
       delayImportDescriptor = if length imageDataDirectory > 13 then Just (imageDataDirectory !! 13) else Nothing
       clrRuntimeHeader      = if length imageDataDirectory > 14 then Just (imageDataDirectory !! 14) else Nothing
   pure $ OptionalHeader
-    { isPE32Plus = isPE32Plus
+    { isPE32Plus        = isPE32Plus
     , entryPointAddress = addressOfEntryPoint
-    , imageBase = imageBase
-    , subsystem = subsystem
-    , dllCharactertics = dllCharacteristics
+    , imageBase         = fromIntegral imageBase
+    , subsystem         = subsystem
+    , dllCharactertics  = dllCharacteristics
+    , importTableRVA    = importTable
     }
 
 getCharUTF8 :: Get Word32
@@ -396,9 +422,9 @@ getCharUTF8 = do
     n | n .&. 0xf8 == 0xf0 -> getCharUTF84 n
     _                      -> fail "Invalid first byte in UTF8 string."
 
-getSectionName :: Get String
-getSectionName = liftM (map (chr . fromIntegral)) getSectionName_
-    where getSectionName_ = do
+getUtf8String :: Get String
+getUtf8String = liftM (map (chr . fromIntegral)) getUtf8String_
+    where getUtf8String_ = do
             empty <- isEmpty
             if empty then
                 return []
@@ -407,23 +433,25 @@ getSectionName = liftM (map (chr . fromIntegral)) getSectionName_
               if char == 0 then
                   return []
                else do
-                rest <- getSectionName_
+                rest <- getUtf8String_
                 return (char : rest)
 
-data PecoffSection = PecoffSection
-                   { psectName            :: String                      -- ^ Name of section.
-                   , psectVirtualSize     :: Word64                      -- ^ Virtual memory size.
-                   , psectVirtualAddress  :: Word64                      -- ^ Virtual memory address.
-                   , psectCharacteristics :: [IMAGE_SCN_CHARACTERISTICS] -- ^ Flags.
-                   , psectRelocations     :: B.ByteString                -- ^ Raw data for relocations.
-                   , psectLinenumbers     :: B.ByteString                -- ^ Raw data for linenumbers.
-                   , psectRawData         :: B.ByteString                -- ^ Raw data for section.
-                   } deriving (Show, Eq)
+data Section = Section
+  { name            :: String                      -- ^ Name of section.
+  , virtualSize     :: Int32                       -- ^ Virtual memory size.
+  , virtualAddress  :: Int32                       -- ^ Virtual memory address.
+  , rawDataSize     :: Int32
+  , rawDataPointer  :: Int32
+  , characteristics :: [IMAGE_SCN_CHARACTERISTICS] -- ^ Flags.
+  -- , relocations     :: B.ByteString                -- ^ Raw data for relocations.
+  -- , linenumbers     :: B.ByteString                -- ^ Raw data for linenumbers.
+  , rawData         :: B.ByteString                -- ^ Raw data for section.
+  } deriving (Show, Eq)
 
-getSectionHeader ::  C.ByteString -> Get PecoffSection
+getSectionHeader ::  C.ByteString -> Get Section
 getSectionHeader bs = do
   full_name            <- getByteString 8
-  name                 <- return $ runGet getSectionName $ L.fromChunks[full_name]
+  name                 <- return $ runGet getUtf8String $ L.fromChunks[full_name]
   virtualSize          <- liftM fromIntegral getWord32le
   virtualAddress       <- liftM fromIntegral getWord32le
   sizeOfRawData        <- liftM fromIntegral getWord32le
@@ -433,17 +461,20 @@ getSectionHeader bs = do
   numberOfRelocations  <- liftM fromIntegral getWord16le
   numberOfLinenumbers  <- liftM fromIntegral getWord16le
   characteristics      <- liftM imageScnCharacteristics getWord32le
-  return $ PecoffSection
-         { psectName            = name
-         , psectVirtualSize     = virtualSize
-         , psectVirtualAddress  = virtualAddress
-         , psectCharacteristics = characteristics
-         , psectRelocations     = B.take (10 * numberOfRelocations) $ B.drop pointerToRelocations bs
-         , psectLinenumbers     = B.take (6 * numberOfLinenumbers) $ B.drop pointerToLinenumbers bs
-         , psectRawData         = B.take sizeOfRawData $ B.drop pointerToRawData bs
+  return $ Section
+         { name            = name
+         , virtualSize     = virtualSize
+         , virtualAddress  = virtualAddress
+         , rawDataSize     = sizeOfRawData
+         , rawDataPointer  = pointerToRawData
+         , characteristics = characteristics
+        --  , relocations     = B.take (10 * numberOfRelocations) $ B.drop pointerToRelocations bs
+        --  , linenumbers     = B.take (6 * numberOfLinenumbers) $ B.drop pointerToLinenumbers bs
+         , rawData         = B.take (fromIntegral sizeOfRawData) $ B.drop (fromIntegral pointerToRawData) bs
          }
-                          
-getPeOffset :: Get Int
+ 
+-- | Reads PE file up to (including) PE header offset and returns it.
+getPeOffset :: Get Int32
 getPeOffset = do
   magic <- liftM (C.unpack . B.pack) $ sequence [getWord8, getWord8]
   if magic == "MZ" then do
@@ -458,20 +489,117 @@ getPecoff bs = do
   magic <- liftM (C.unpack . B.pack) $ sequence [getWord8, getWord8, getWord8, getWord8]
   if magic /= "PE\0\0" then
       fail "Invalid magic number in PE header."
-   else do
-     coffHeader <- getImageFileHeader
-     optionalHeader <- getOptionalHeader
-     sections <- sequence $ replicate (sectionCount coffHeader) (getSectionHeader bs)
-     return $ Pecoff
-                { coffHeader     = coffHeader
-                , optionalHeader = optionalHeader
-                , pSections      = sections
-                }
+  else do
+    coffHeader <- getImageFileHeader
+    optionalHeader <- getOptionalHeader
+    sections <- sequence $ replicate (fromIntegral $ sectionCount coffHeader) (getSectionHeader bs)
+
+    let idts = case importTableRVA optionalHeader of
+          Just dataDir -> getAt' sections getImportDirectoryTables dataDir
+          Nothing      -> []
+            
+    pure $ Pecoff
+      { coffHeader     = coffHeader
+      , optionalHeader = optionalHeader
+      , pSections      = sections
+      , importTables   = resolveImport sections <$> idts
+      }
      
 -- | Parse the ByteString of a PE/COFF file into a Pecoff record.
 parsePecoff :: B.ByteString -> Pecoff
 parsePecoff bs =
   let coffOffset = runGet getPeOffset $ L.fromChunks [bs]
-      coffObject = B.drop coffOffset bs
-  in runGet (getPecoff coffObject) $ L.fromChunks [coffObject]
+      coffObject = B.drop (fromIntegral $ coffOffset) bs
+  in runGet (getPecoff bs) $ L.fromChunks [coffObject]
   
+data ImportDirectoryTable = ImportDirectoryTable
+  { lookupTable        :: RelativeVirtualAddress
+  , timestamp          :: UTCTime
+  , firstForwarder     :: Int32
+  , nameAddress        :: RelativeVirtualAddress
+  , importAddressTable :: RelativeVirtualAddress
+  }
+  deriving (Show, Eq)
+
+data ImportLookupTable = ImportLookupTable
+  { entries :: ImportEntry
+  }
+  deriving (Show, Eq)
+
+data ImportEntry = OrdinalImportEntry Int16 | NameImportEntry RelativeVirtualAddress
+  
+data Import = Import
+  { libraryName :: String
+  }
+  deriving (Show, Eq)
+
+getImportDirectoryTable :: Get ImportDirectoryTable
+getImportDirectoryTable = do
+  lookupTable <- getRva
+  timestamp <- getTimestamp
+  firstForwarder <- fromIntegral <$> getWord32le
+  nameAddress <- getRva
+  importAddressTable <- getRva
+  pure $ ImportDirectoryTable
+    { lookupTable        = lookupTable
+    , timestamp          = timestamp
+    , firstForwarder     = firstForwarder
+    , nameAddress        = nameAddress
+    , importAddressTable = importAddressTable
+    }
+
+getImportDirectoryTables :: Get [ImportDirectoryTable]
+getImportDirectoryTables = do
+  idt <- getImportDirectoryTable
+  case nameAddress idt of
+    0 -> pure []
+    _ -> do
+      tail <- getImportDirectoryTables
+      pure $ idt : tail
+     
+resolveImport :: [Section] -> ImportDirectoryTable -> Import
+resolveImport s idt = 
+  let libraryName = getAt s getUtf8String $ nameAddress idt
+  in Import
+    { libraryName = libraryName
+    }
+
+getAt :: [Section] -> Get a -> RelativeVirtualAddress -> a
+getAt s g rva = runGet g lbs where
+    lbs = L.fromStrict bsAt
+    bsAt = rvaToBS rva s
+
+getAt' :: [Section] -> Get a -> DataDirectory -> a
+getAt' s g d = runGet g lbs where
+  lbs = L.fromStrict $ dataDirToBS d s
+
+dataDirToBS :: DataDirectory -> [Section] -> B.ByteString
+dataDirToBS datum sections = B.take length $ rvaToBS rva sections where
+    length = fromIntegral $ size datum
+    rva = address datum
+
+sectionContains :: RelativeVirtualAddress -> Section -> Bool
+sectionContains rva s = rva >= begin && rva < end where
+    begin = virtualAddress s
+    end   = virtualSize    s + begin
+
+getSection :: [Section] -> RelativeVirtualAddress -> Section
+getSection allSections rva = relevantSection where
+    isRelevant = sectionContains rva
+    relevantSection = case find isRelevant allSections of
+        Just s -> s
+        Nothing -> error $ "failed to find section containing RVA=" <> show rva
+
+rvaToBS :: RelativeVirtualAddress -> [Section] -> B.ByteString
+rvaToBS rva sections = B.drop offset $ rawData section where
+    (section, offset) = rvaToSectionOffset rva sections
+            
+rvaToFileOffset :: RelativeVirtualAddress -> [Section] -> Int
+rvaToFileOffset rva sections = offset + fromIntegral (rawDataPointer section) where
+    (section, offset) = rvaToSectionOffset rva sections
+    
+rvaToSectionOffset :: RelativeVirtualAddress -> [Section] -> (Section, Int)
+rvaToSectionOffset rva sections = (section, offset) where
+    offset    = fromIntegral $ rva - sectionVA
+    sectionVA = virtualAddress section
+    section   = getSection sections rva
