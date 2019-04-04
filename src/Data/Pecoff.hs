@@ -15,6 +15,10 @@ module Data.Pecoff where
                   --  ) where
 
 
+import Data.Pecoff.Enums
+import Data.Pecoff.Headers
+import Data.Pecoff.Gettable
+
 import Data.Bits
 import Data.Char
 import Data.List
@@ -27,223 +31,6 @@ import Control.Monad
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as L
-    
-data IMAGE_SUBSYSTEM
-    = IMAGE_SUBSYSTEM_UNKNOWN
-    | IMAGE_SUBSYSTEM_NATIVE
-    | IMAGE_SUBSYSTEM_WINDOWS_GUI
-    | IMAGE_SUBSYSTEM_WINDOWS_CUI
-    | IMAGE_SUBSYSTEM_OS2_CUI
-    | IMAGE_SUBSYSTEM_POSIX_CUI
-    | IMAGE_SUBSYSTEM_NATIVE_WINDOWS
-    | IMAGE_SUBSYSTEM_WINDOWS_CE_GUI
-    | IMAGE_SUBSYSTEM_EFI_APPLICATION
-    | IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER
-    | IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER
-    | IMAGE_SUBSYSTEM_EFI_ROM
-    | IMAGE_SUBSYSTEM_XBOX
-    deriving (Show, Eq)
-
-imageSubsystem :: Word16 -> IMAGE_SUBSYSTEM
-imageSubsystem  0 = IMAGE_SUBSYSTEM_UNKNOWN
-imageSubsystem  1 = IMAGE_SUBSYSTEM_NATIVE
-imageSubsystem  2 = IMAGE_SUBSYSTEM_WINDOWS_GUI
-imageSubsystem  3 = IMAGE_SUBSYSTEM_WINDOWS_CUI
-imageSubsystem  5 = IMAGE_SUBSYSTEM_OS2_CUI
-imageSubsystem  7 = IMAGE_SUBSYSTEM_POSIX_CUI
-imageSubsystem  8 = IMAGE_SUBSYSTEM_NATIVE_WINDOWS
-imageSubsystem  9 = IMAGE_SUBSYSTEM_WINDOWS_CE_GUI
-imageSubsystem 10 = IMAGE_SUBSYSTEM_EFI_APPLICATION
-imageSubsystem 11 = IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER
-imageSubsystem 12 = IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER
-imageSubsystem 13 = IMAGE_SUBSYSTEM_EFI_ROM
-imageSubsystem 14 = IMAGE_SUBSYSTEM_XBOX
-imageSubsystem n = error ("hrm " ++ show n)
-
-data IMAGE_SCN_CHARACTERISTICS
-    = IMAGE_SCN_TYPE_NO_PAD
-    | IMAGE_SCN_CNT_CODE
-    | IMAGE_SCN_CNT_INITIALIZED_DATA
-    | IMAGE_SCN_CNT_UNINITIALIZED_DATA
-    | IMAGE_SCN_LNK_OTHER
-    | IMAGE_SCN_LNK_INFO
-    | IMAGE_SCN_LNK_REMOVE
-    | IMAGE_SCN_LNK_COMDAT
-    | IMAGE_SCN_GPREL
-    | IMAGE_SCN_MEM_PURGEABLE
-    | IMAGE_SCN_MEM_16BIT
-    | IMAGE_SCN_MEM_LOCKED
-    | IMAGE_SCN_MEM_PRELOAD
-    | IMAGE_SCN_ALIGN_1BYTES
-    | IMAGE_SCN_ALIGN_2BYTES
-    | IMAGE_SCN_ALIGN_4BYTES
-    | IMAGE_SCN_ALIGN_8BYTES
-    | IMAGE_SCN_ALIGN_16BYTES
-    | IMAGE_SCN_ALIGN_32BYTES
-    | IMAGE_SCN_ALIGN_64BYTES
-    | IMAGE_SCN_ALIGN_128BYTES
-    | IMAGE_SCN_ALIGN_256BYTES
-    | IMAGE_SCN_ALIGN_512BYTES
-    | IMAGE_SCN_ALIGN_1024BYTES
-    | IMAGE_SCN_ALIGN_2048BYTES
-    | IMAGE_SCN_ALIGN_4096BYTES
-    | IMAGE_SCN_ALIGN_8192BYTES
-    | IMAGE_SCN_LNK_NRELOC_OVFL
-    | IMAGE_SCN_MEM_DISCARDABLE
-    | IMAGE_SCN_MEM_NOT_CACHED
-    | IMAGE_SCN_MEM_NOT_PAGED
-    | IMAGE_SCN_MEM_SHARED
-    | IMAGE_SCN_MEM_EXECUTE
-    | IMAGE_SCN_MEM_READ
-    | IMAGE_SCN_MEM_WRITE
-    deriving (Show, Eq)
-
-imageScnCharacteristics :: Word32 -> [IMAGE_SCN_CHARACTERISTICS]
-imageScnCharacteristics n = imageScnAlign_ ((n .&. 0x00f00000) `shiftR` 20) ++ imageScnCharacteristics_ n 32
-                          where imageScnAlign_ 0x0 = []
-                                imageScnAlign_ 0x1 = [IMAGE_SCN_ALIGN_1BYTES]
-                                imageScnAlign_ 0x2 = [IMAGE_SCN_ALIGN_2BYTES]
-                                imageScnAlign_ 0x3 = [IMAGE_SCN_ALIGN_4BYTES]
-                                imageScnAlign_ 0x4 = [IMAGE_SCN_ALIGN_8BYTES]
-                                imageScnAlign_ 0x5 = [IMAGE_SCN_ALIGN_16BYTES]
-                                imageScnAlign_ 0x6 = [IMAGE_SCN_ALIGN_32BYTES]
-                                imageScnAlign_ 0x7 = [IMAGE_SCN_ALIGN_64BYTES]
-                                imageScnAlign_ 0x8 = [IMAGE_SCN_ALIGN_128BYTES]
-                                imageScnAlign_ 0x9 = [IMAGE_SCN_ALIGN_256BYTES]
-                                imageScnAlign_ 0xa = [IMAGE_SCN_ALIGN_512BYTES]
-                                imageScnAlign_ 0xb = [IMAGE_SCN_ALIGN_1024BYTES]
-                                imageScnAlign_ 0xc = [IMAGE_SCN_ALIGN_2048BYTES]
-                                imageScnAlign_ 0xd = [IMAGE_SCN_ALIGN_4096BYTES]
-                                imageScnAlign_ 0xe = [IMAGE_SCN_ALIGN_8192BYTES]
-                                imageScnCharacteristics_ n  0 = []
-                                imageScnCharacteristics_ n  4 | testBit n  3 = IMAGE_SCN_TYPE_NO_PAD                         : imageScnCharacteristics_ n  3
-                                imageScnCharacteristics_ n  6 | testBit n  5 = IMAGE_SCN_CNT_CODE                            : imageScnCharacteristics_ n  5
-                                imageScnCharacteristics_ n  7 | testBit n  6 = IMAGE_SCN_CNT_INITIALIZED_DATA                : imageScnCharacteristics_ n  6
-                                imageScnCharacteristics_ n  8 | testBit n  7 = IMAGE_SCN_CNT_UNINITIALIZED_DATA              : imageScnCharacteristics_ n  7
-                                imageScnCharacteristics_ n  9 | testBit n  8 = IMAGE_SCN_LNK_OTHER                           : imageScnCharacteristics_ n  8
-                                imageScnCharacteristics_ n 10 | testBit n  9 = IMAGE_SCN_LNK_INFO                            : imageScnCharacteristics_ n  9
-                                imageScnCharacteristics_ n 12 | testBit n 11 = IMAGE_SCN_LNK_REMOVE                          : imageScnCharacteristics_ n 11
-                                imageScnCharacteristics_ n 13 | testBit n 12 = IMAGE_SCN_LNK_COMDAT                          : imageScnCharacteristics_ n 12
-                                imageScnCharacteristics_ n 16 | testBit n 15 = IMAGE_SCN_GPREL                               : imageScnCharacteristics_ n 15
-                                imageScnCharacteristics_ n 18 | testBit n 17 = IMAGE_SCN_MEM_PURGEABLE : IMAGE_SCN_MEM_16BIT : imageScnCharacteristics_ n 17
-                                imageScnCharacteristics_ n 19 | testBit n 18 = IMAGE_SCN_MEM_LOCKED                          : imageScnCharacteristics_ n 18
-                                imageScnCharacteristics_ n 20 | testBit n 19 = IMAGE_SCN_MEM_PRELOAD                         : imageScnCharacteristics_ n 19
-                                imageScnCharacteristics_ n 25 | testBit n 24 = IMAGE_SCN_LNK_NRELOC_OVFL                     : imageScnCharacteristics_ n 24
-                                imageScnCharacteristics_ n 26 | testBit n 25 = IMAGE_SCN_MEM_DISCARDABLE                     : imageScnCharacteristics_ n 25
-                                imageScnCharacteristics_ n 27 | testBit n 26 = IMAGE_SCN_MEM_NOT_CACHED                      : imageScnCharacteristics_ n 26
-                                imageScnCharacteristics_ n 28 | testBit n 27 = IMAGE_SCN_MEM_NOT_PAGED                       : imageScnCharacteristics_ n 27
-                                imageScnCharacteristics_ n 29 | testBit n 28 = IMAGE_SCN_MEM_SHARED                          : imageScnCharacteristics_ n 28
-                                imageScnCharacteristics_ n 30 | testBit n 29 = IMAGE_SCN_MEM_EXECUTE                         : imageScnCharacteristics_ n 29
-                                imageScnCharacteristics_ n 31 | testBit n 30 = IMAGE_SCN_MEM_READ                            : imageScnCharacteristics_ n 30
-                                imageScnCharacteristics_ n 32 | testBit n 31 = IMAGE_SCN_MEM_WRITE                           : imageScnCharacteristics_ n 31
-                                imageScnCharacteristics_ n i = imageScnCharacteristics_ n (i-1)
-
-data IMAGE_DLL_CHARACTERISTICS
-    = IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE
-    | IMAGE_DLL_CHARACTERISTICS_FORCE_INTEGRITY
-    | IMAGE_DLL_CHARACTERISTICS_NX_COMPAT
-    | IMAGE_DLL_CHARACTERISTICS_NO_ISOLATION
-    | IMAGE_DLL_CHARACTERISTICS_NO_SEH
-    | IMAGE_DLL_CHARACTERISTICS_NO_BIND
-    | IMAGE_DLL_CHARACTERISTICS_WDM_DRIVER
-    | IMAGE_DLL_CHARACTERISTICS_TERMINAL_SERVER_AWARE
-    deriving (Show, Eq)
-
-imageDllCharacteristics :: Word16 -> [IMAGE_DLL_CHARACTERISTICS]
-imageDllCharacteristics n = imageDllCharacteristics_ n 16
-                            where imageDllCharacteristics_ n  0 = []
-                                  imageDllCharacteristics_ n  7 | testBit n  6 = IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE          : imageDllCharacteristics_ n  6
-                                  imageDllCharacteristics_ n  8 | testBit n  7 = IMAGE_DLL_CHARACTERISTICS_FORCE_INTEGRITY       : imageDllCharacteristics_ n  7
-                                  imageDllCharacteristics_ n  9 | testBit n  8 = IMAGE_DLL_CHARACTERISTICS_NX_COMPAT             : imageDllCharacteristics_ n  8
-                                  imageDllCharacteristics_ n 10 | testBit n  9 = IMAGE_DLL_CHARACTERISTICS_NO_ISOLATION          : imageDllCharacteristics_ n  9
-                                  imageDllCharacteristics_ n 11 | testBit n 10 = IMAGE_DLL_CHARACTERISTICS_NO_SEH                : imageDllCharacteristics_ n 10
-                                  imageDllCharacteristics_ n 12 | testBit n 11 = IMAGE_DLL_CHARACTERISTICS_NO_BIND               : imageDllCharacteristics_ n 11
-                                  imageDllCharacteristics_ n 14 | testBit n 13 = IMAGE_DLL_CHARACTERISTICS_WDM_DRIVER            : imageDllCharacteristics_ n 13
-                                  imageDllCharacteristics_ n 16 | testBit n 15 = IMAGE_DLL_CHARACTERISTICS_TERMINAL_SERVER_AWARE : imageDllCharacteristics_ n 15
-                                  imageDllCharacteristics_ n i = imageDllCharacteristics_ n (i-1)
-
-data IMAGE_FILE_CHARACTERISTICS
-    = IMAGE_FILE_RELOCS_STRIPPED
-    | IMAGE_FILE_EXECUTABLE_IMAGE
-    | IMAGE_FILE_LINE_NUMS_STRIPPED
-    | IMAGE_FILE_LOCAL_SYMS_STIRPPED
-    | IMAGE_FILE_AGGRESSIVE_WS_TRIM
-    | IMAGE_FILE_LARGE_ADDRESS_AWARE
-    | IMAGE_FILE_BYTES_REVERSED_LO
-    | IMAGE_FILE_32BIT_MACHINE
-    | IMAGE_FILE_DEBUG_STRIPPED
-    | IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP
-    | IMAGE_FILE_NET_RUN_FROM_SWAP
-    | IMAGE_FILE_SYSTEM
-    | IMAGE_FILE_DLL
-    | IMAGE_FILE_UP_SYSTEM_ONLY
-    | IMAGE_FILE_BYTES_REVERSED_HI
-    deriving (Show, Eq)
-
-imageFileCharacteristics :: Word16 -> [IMAGE_FILE_CHARACTERISTICS]
-imageFileCharacteristics n = imageFileCharacteristics_ n 16
-                            where imageFileCharacteristics_ n  0 = []
-                                  imageFileCharacteristics_ n  1 | testBit n  0 = IMAGE_FILE_RELOCS_STRIPPED         : imageFileCharacteristics_ n 0
-                                  imageFileCharacteristics_ n  2 | testBit n  1 = IMAGE_FILE_EXECUTABLE_IMAGE        : imageFileCharacteristics_ n 1
-                                  imageFileCharacteristics_ n  3 | testBit n  2 = IMAGE_FILE_LINE_NUMS_STRIPPED      : imageFileCharacteristics_ n 2
-                                  imageFileCharacteristics_ n  4 | testBit n  3 = IMAGE_FILE_LOCAL_SYMS_STIRPPED     : imageFileCharacteristics_ n 3
-                                  imageFileCharacteristics_ n  5 | testBit n  4 = IMAGE_FILE_AGGRESSIVE_WS_TRIM      : imageFileCharacteristics_ n 4
-                                  imageFileCharacteristics_ n  6 | testBit n  5 = IMAGE_FILE_LARGE_ADDRESS_AWARE     : imageFileCharacteristics_ n 5
-                                  imageFileCharacteristics_ n  8 | testBit n  7 = IMAGE_FILE_BYTES_REVERSED_LO       : imageFileCharacteristics_ n 7
-                                  imageFileCharacteristics_ n  9 | testBit n  8 = IMAGE_FILE_32BIT_MACHINE           : imageFileCharacteristics_ n 8
-                                  imageFileCharacteristics_ n 10 | testBit n  9 = IMAGE_FILE_DEBUG_STRIPPED          : imageFileCharacteristics_ n 9
-                                  imageFileCharacteristics_ n 11 | testBit n 10 = IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP : imageFileCharacteristics_ n 10
-                                  imageFileCharacteristics_ n 12 | testBit n 11 = IMAGE_FILE_NET_RUN_FROM_SWAP       : imageFileCharacteristics_ n 11
-                                  imageFileCharacteristics_ n 13 | testBit n 12 = IMAGE_FILE_SYSTEM                  : imageFileCharacteristics_ n 12
-                                  imageFileCharacteristics_ n 14 | testBit n 13 = IMAGE_FILE_DLL                     : imageFileCharacteristics_ n 13
-                                  imageFileCharacteristics_ n 15 | testBit n 14 = IMAGE_FILE_UP_SYSTEM_ONLY          : imageFileCharacteristics_ n 14
-                                  imageFileCharacteristics_ n 16 | testBit n 15 = IMAGE_FILE_BYTES_REVERSED_HI       : imageFileCharacteristics_ n 15
-                                  imageFileCharacteristics_ n i = imageFileCharacteristics_ n (i-1)
- 
-data IMAGE_FILE_MACHINE
-    = IMAGE_FILE_MACHINE_UNKNOWN
-    | IMAGE_FILE_MACHINE_AM33
-    | IMAGE_FILE_MACHINE_AMD64
-    | IMAGE_FILE_MACHINE_ARM
-    | IMAGE_FILE_MACHINE_EBC
-    | IMAGE_FILE_MACHINE_I386
-    | IMAGE_FILE_MACHINE_IA64
-    | IMAGE_FILE_MACHINE_M32R
-    | IMAGE_FILE_MACHINE_MIPS16
-    | IMAGE_FILE_MACHINE_MIPSFPU
-    | IMAGE_FILE_MACHINE_MIPSFPU16
-    | IMAGE_FILE_MACHINE_POWERPC
-    | IMAGE_FILE_MACHINE_POWERPCFP
-    | IMAGE_FILE_MACHINE_R4000
-    | IMAGE_FILE_MACHINE_SH3
-    | IMAGE_FILE_MACHINE_SH3DSP
-    | IMAGE_FILE_MACHINE_SH4
-    | IMAGE_FILE_MACHINE_SH5
-    | IMAGE_FILE_MACHINE_THUMB
-    | IMAGE_FILE_MACHINE_WCEMIPSV2
-    deriving (Show, Eq)
-
-imageFileMachine :: Word16 -> IMAGE_FILE_MACHINE
-imageFileMachine 0x0000 = IMAGE_FILE_MACHINE_UNKNOWN
-imageFileMachine 0x01d3 = IMAGE_FILE_MACHINE_AM33
-imageFileMachine 0x8664 = IMAGE_FILE_MACHINE_AMD64
-imageFileMachine 0x01c0 = IMAGE_FILE_MACHINE_ARM
-imageFileMachine 0x0ebc = IMAGE_FILE_MACHINE_EBC
-imageFileMachine 0x014c = IMAGE_FILE_MACHINE_I386
-imageFileMachine 0x0200 = IMAGE_FILE_MACHINE_IA64
-imageFileMachine 0x9041 = IMAGE_FILE_MACHINE_M32R
-imageFileMachine 0x0266 = IMAGE_FILE_MACHINE_MIPS16
-imageFileMachine 0x0366 = IMAGE_FILE_MACHINE_MIPSFPU
-imageFileMachine 0x0466 = IMAGE_FILE_MACHINE_MIPSFPU16
-imageFileMachine 0x01f0 = IMAGE_FILE_MACHINE_POWERPC
-imageFileMachine 0x01f1 = IMAGE_FILE_MACHINE_POWERPCFP
-imageFileMachine 0x0166 = IMAGE_FILE_MACHINE_R4000
-imageFileMachine 0x01a2 = IMAGE_FILE_MACHINE_SH3
-imageFileMachine 0x01a3 = IMAGE_FILE_MACHINE_SH3DSP
-imageFileMachine 0x01a6 = IMAGE_FILE_MACHINE_SH4
-imageFileMachine 0x01a8 = IMAGE_FILE_MACHINE_SH5
-imageFileMachine 0x01c2 = IMAGE_FILE_MACHINE_THUMB
-imageFileMachine 0x0169 = IMAGE_FILE_MACHINE_WCEMIPSV2
            
 type AdressGetter = Get Word64
 
@@ -270,13 +57,13 @@ getTimestamp =  (posixSecondsToUTCTime . fromInteger . fromIntegral) <$> getWord
 
 -- | Standard COFF File Header
 data CoffHeader = CoffHeader
-  { machine             :: IMAGE_FILE_MACHINE -- ^ Target machine type
-  , sectionCount        :: Int16              -- ^ Number of sections.
-  , timestamp           :: UTCTime            -- ^ When the file was created
-  , symbolTableOffset   :: Int32 -- ^ File offset
-  , symbolCount         :: Int32
-  , optionalHeaderSize  :: Int32
-  , fileCharacteristics :: [IMAGE_FILE_CHARACTERISTICS]
+  { machine             :: Machine -- ^ Target machine type
+  , sectionCount        :: Int16   -- ^ Number of sections.
+  , timestamp           :: UTCTime -- ^ The date and time when the image was created by the linker.
+  , symbolTableOffset   :: Int32 -- ^ The offset of the symbol table, in bytes, or zero if no COFF symbol table exists.
+  , symbolCount         :: Int32 -- ^ The number of symbols in the symbol table.
+  , optionalHeaderSize  :: Int32 -- ^ The size of the optional header, in bytes. This value should be 0 for object files.
+  , fileCharacteristics :: [Characteristics]
   } 
   deriving (Show, Eq)
 
@@ -304,29 +91,29 @@ data OptionalHeader = OptionalHeader
   { isPE32Plus        :: Bool
   , entryPointAddress :: Int32            -- ^ Entry point address, relative to the image base.
   , imageBase         :: Int64            -- ^ Preferred load base address of image.
-  , subsystem         :: IMAGE_SUBSYSTEM  -- ^ Subsystem required to run this image. 
-  , dllCharactertics  :: [IMAGE_DLL_CHARACTERISTICS]
+  , subsystem         :: Subsystem  -- ^ Subsystem required to run this image. 
+  , dllCharactertics  :: [DllCharacteristics]
   , importTableRVA    :: Maybe DataDirectory
   }
   deriving (Show, Eq)
 
 getImageFileHeader :: Get CoffHeader
 getImageFileHeader = do
-  machine <- getWord16le
+  machine <- get
   numsect <- getWord16le
   tmstamp <- getTimestamp
   symtoff <- getWord32le
   symtcnt <- getWord32le
   szopthd <- getWord16le
-  attribs <- getWord16le
+  characteristics <- get
   pure $ CoffHeader
-    { machine             = imageFileMachine machine
+    { machine             = machine
     , sectionCount        = fromIntegral numsect
     , timestamp           = tmstamp
     , symbolTableOffset   = fromIntegral symtoff
     , symbolCount         = fromIntegral symtcnt
     , optionalHeaderSize  = fromIntegral szopthd
-    , fileCharacteristics = imageFileCharacteristics attribs
+    , fileCharacteristics = characteristics
     }
   -- return (machine, numsect, attribs)
 
@@ -356,8 +143,8 @@ getOptionalHeader = do
   sizeOfImage             <- getWord32le
   sizeOfHeaders           <- getWord32le
   checksum                <- getWord32le
-  subsystem               <- liftM imageSubsystem $ getWord16le
-  dllCharacteristics      <- liftM imageDllCharacteristics $ getWord16le
+  subsystem               <- get
+  dllCharacteristics      <- get
   sizeOfStackReserve      <- getAddress
   sizeOfStackCommit       <- getAddress
   sizeOfHeapReserve       <- getAddress
@@ -442,7 +229,7 @@ data Section = Section
   , virtualAddress  :: Int32                       -- ^ Virtual memory address.
   , rawDataSize     :: Int32
   , rawDataPointer  :: Int32
-  , characteristics :: [IMAGE_SCN_CHARACTERISTICS] -- ^ Flags.
+  , characteristics :: [SectionCharacteristics] -- ^ Flags.
   -- , relocations     :: B.ByteString                -- ^ Raw data for relocations.
   -- , linenumbers     :: B.ByteString                -- ^ Raw data for linenumbers.
   , rawData         :: B.ByteString                -- ^ Raw data for section.
@@ -460,7 +247,7 @@ getSectionHeader bs = do
   pointerToLinenumbers <- liftM fromIntegral getWord32le
   numberOfRelocations  <- liftM fromIntegral getWord16le
   numberOfLinenumbers  <- liftM fromIntegral getWord16le
-  characteristics      <- liftM imageScnCharacteristics getWord32le
+  characteristics      <- get
   return $ Section
          { name            = name
          , virtualSize     = virtualSize
@@ -502,7 +289,7 @@ getPecoff bs = do
       { coffHeader     = coffHeader
       , optionalHeader = optionalHeader
       , pSections      = sections
-      , importTables   = resolveImport sections <$> idts
+      , importTables   = resolveImport (isPE32Plus optionalHeader) sections <$> idts
       }
      
 -- | Parse the ByteString of a PE/COFF file into a Pecoff record.
@@ -521,16 +308,64 @@ data ImportDirectoryTable = ImportDirectoryTable
   }
   deriving (Show, Eq)
 
-data ImportLookupTable = ImportLookupTable
-  { entries :: ImportEntry
+type ImportLookupTable = [ImportLookupEntry]
+
+data ImportLookupEntry 
+  = OrdinalImportLookupEntry Int16 
+  | NameImportLookupEntry RelativeVirtualAddress
+  deriving (Show, Eq)
+ 
+data ImportHintNameEntry = ImportHintNameEntry
+  { hint :: Int16
+  , importName :: String
   }
   deriving (Show, Eq)
 
-data ImportEntry = OrdinalImportEntry Int16 | NameImportEntry RelativeVirtualAddress
+getImportHintNameEntry :: Get ImportHintNameEntry
+getImportHintNameEntry = do
+  hint <- getWord16le
+  name <- getUtf8String
+  pure $ ImportHintNameEntry 
+    { hint = fromIntegral hint
+    , importName = name 
+    }
+
+
+nullImportLookupEntry = NameImportLookupEntry 0
+
+importLookupEntry:: (Integral bits, FiniteBits bits) => bits -> ImportLookupEntry
+importLookupEntry val = 
+  let maskBit = finiteBitSize val - 1
+      unmasked = fromIntegral $ clearBit val maskBit
+  in if testBit val maskBit
+    then OrdinalImportLookupEntry $ fromIntegral $ unmasked
+    else NameImportLookupEntry    $ fromIntegral $ unmasked
+
+getImportLookupEntry 
+  :: Bool  -- ^ Is PE32+ executable
+  -> Get ImportLookupEntry
+getImportLookupEntry True  = importLookupEntry <$> getWord64le
+getImportLookupEntry False = importLookupEntry <$> getWord32le
   
+getImportEntries 
+  :: Bool  -- ^ Is PE32+ executable
+  -> Get [ImportLookupEntry]
+getImportEntries pe32type = do
+  ie <- getImportLookupEntry pe32type
+  if ie == nullImportLookupEntry
+    then pure []
+    else do
+      (ie :) <$> getImportEntries pe32type
+
 data Import = Import
   { libraryName :: String
+  , entries     :: [ImportedFunction]
   }
+  deriving (Show, Eq)
+
+data ImportedFunction 
+  = FunctionName String
+  | FunctionOrdinal Int
   deriving (Show, Eq)
 
 getImportDirectoryTable :: Get ImportDirectoryTable
@@ -554,14 +389,24 @@ getImportDirectoryTables = do
   case nameAddress idt of
     0 -> pure []
     _ -> do
-      tail <- getImportDirectoryTables
-      pure $ idt : tail
+      (idt :) <$> getImportDirectoryTables
      
-resolveImport :: [Section] -> ImportDirectoryTable -> Import
-resolveImport s idt = 
+-- getImportLookupTable :: ImportLookupTable
+
+resolveLookupEntry :: [Section] -> ImportLookupEntry -> ImportedFunction
+resolveLookupEntry _ (OrdinalImportLookupEntry ordinal) = FunctionOrdinal $ fromIntegral ordinal
+resolveLookupEntry s (NameImportLookupEntry nameHintRva) = 
+  let nameHintEntry = getAt s getImportHintNameEntry nameHintRva
+  in FunctionName (importName nameHintEntry)
+
+resolveImport :: Bool -> [Section] -> ImportDirectoryTable -> Import
+resolveImport isPe32Plus s idt = 
   let libraryName = getAt s getUtf8String $ nameAddress idt
+      entries = getAt s (getImportEntries isPe32Plus) $ importAddressTable idt
+
   in Import
     { libraryName = libraryName
+    , entries = resolveLookupEntry s <$> entries
     }
 
 getAt :: [Section] -> Get a -> RelativeVirtualAddress -> a

@@ -25,5 +25,15 @@ tests:
 stability: unstable
 
 default-extensions:
+  AllowAmbiguousTypes
   LambdaCase
   DuplicateRecordFields 
+  FlexibleContexts
+  FlexibleInstances
+  IncoherentInstances
+  InstanceSigs
+  RankNTypes
+  ScopedTypeVariables
+  TypeApplications
+  TypeFamilies
+  UndecidableInstances
