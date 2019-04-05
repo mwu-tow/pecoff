@@ -2,7 +2,7 @@ module Data.Pecoff.Enums.Characteristics where
 
 import Data.Pecoff.Enum
 
--- | The 'fileCharacteristics' field of the 'CoffHeader' contains flags that
+-- | The 'Data.Pecoff.Header.fileCharacteristics' field of the 'Data.Pecoff.Header.CoffHeader' contains flags that
 -- indicate attributes of the object or image file. The following flags are
 -- currently defined:
 data Characteristics

@@ -36,11 +36,11 @@ class (BinaryRepresentible e, MyEnum e, Num (Representation e), FiniteBits (Repr
     nthBitAsEnum :: Int -> Maybe e
     nthBitAsEnum = asEnum . bit
 
-instance {-# OVERLAPS #-} (EnumBitField e, Binary.Binary (Representation e)) => Gettable [e] where
+instance {-# OVERLAPS #-} (EnumBitField e, Gettable (Representation e)) => Gettable [e] where
     get = do
-        rep <- get @(Representation e)
+        rep <- get
         pure $ asEnums rep
-instance {-# OVERLAPS #-} (MyEnum e, Binary.Binary (Representation e), Show (Representation e)) 
+instance {-# OVERLAPS #-} (MyEnum e, Gettable (Representation e), Show (Representation e)) 
     => Gettable e where
     get = do
         rep <- get

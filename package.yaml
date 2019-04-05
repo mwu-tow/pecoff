@@ -1,14 +1,14 @@
 name: pecoff
-version: '0.11'
+version: '0.2'
 synopsis: Parser for PE/COFF format.
 description: Parser for PE/COFF format.
 category: Data
-author: Erik Charlebois
-maintainer: Erik Charlebois <erikcharlebois@gmail.com>
-copyright: Erik Charlebois
+author: Erik Charlebois, Michał Wawrzyniec Urbańczyk
+maintainer: Michał Wawrzyniec Urbańczyk <mwu-tow@gazeta.pl>
+copyright: Erik Charlebois, Michał Wawrzyniec Urbańczyk
 license: BSD3
 dependencies:
-- base >=4 && <5
+- base
 - bytestring
 - containers
 - binary
@@ -30,9 +30,9 @@ default-extensions:
   DuplicateRecordFields 
   FlexibleContexts
   FlexibleInstances
-  IncoherentInstances
   InstanceSigs
   RankNTypes
+  RecordWildCards
   ScopedTypeVariables
   TypeApplications
   TypeFamilies
