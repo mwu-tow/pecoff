@@ -41,8 +41,8 @@ data ImportLookupEntry
 type ImportLookupTable = [ImportLookupEntry]
 
 data ImportHintNameEntry = ImportHintNameEntry
-    { hint :: Word16
-    , importName :: String
+    { hint :: Word16 -- ^ An index into the export name pointer table. A match is attempted first with this value. If it fails, a binary search is performed on the DLL's export name pointer table. 
+    , importName :: String -- ^ An ASCII string that contains the name to import. This is the string that must be matched to the public name in the DLL. This string is case sensitive.
     }
     deriving (Show, Eq)
 
@@ -73,18 +73,19 @@ getImportLookupEntry _ = importLookupEntry <$> getWord32le
 getImportEntries :: PEFormat -> Get [ImportLookupEntry]
 getImportEntries peformat = repeatUntil (getImportLookupEntry peformat) (== nullImportLookupEntry)
 
+-- | User-friendly description of an imported DLL.
 data Import = Import
-    { libraryName :: String
-    , entries     :: [ImportedFunction]
+    { libraryName :: String -- ^ Name of the DLL
+    , entries     :: [ImportedSymbol]
     }
     deriving (Show, Eq)
 
-data ImportedFunction 
-    = FunctionName String
-    | FunctionOrdinal Int
+data ImportedSymbol 
+    = FunctionName String -- ^ Import by name
+    | FunctionOrdinal Int -- ^ Import by ordinal value
     deriving (Show, Eq)
 
-resolveLookupEntry :: (Addressable a) => a -> ImportLookupEntry -> ImportedFunction
+resolveLookupEntry :: (Addressable a) => a -> ImportLookupEntry -> ImportedSymbol
 resolveLookupEntry _ (OrdinalImportLookupEntry ordinal) = FunctionOrdinal $ fromIntegral ordinal
 resolveLookupEntry s (NameImportLookupEntry nameHintRva) = 
     let nameHintEntry = getAt s get nameHintRva

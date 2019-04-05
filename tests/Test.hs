@@ -28,11 +28,12 @@ main = do
     binaryContents <- B.readFile "c:/d.dll"
     let p = parsePecoff binaryContents
     print $ p
-    let s = pSections p
-    -- print $ importTables parsePecoff
-    let baseAddress = imageBase $ optionalHeader $ p
-    let Just d@(DataDirectory rva _) = importTable $ optionalHeader $ p
-    putStrLn $ "Import table Data Directory: " <> show d
+    print $ imports p
+    -- let s = pSections p
+    -- -- print $ importTables parsePecoff
+    -- let baseAddress = imageBase $ optionalHeader $ p
+    -- let Just d@(DataDirectory rva _) = importTable $ optionalHeader $ p
+    -- putStrLn $ "Import table Data Directory: " <> show d
     -- print $ accessSized p d
     -- putStrLn $ "Base Address: " <> show baseAddress
     -- putStrLn $ "Import table RVA: " <> show rva
@@ -42,8 +43,8 @@ main = do
     -- putStrLn $ "File position: " <> show foffset
 
     -- print $ access d binaryContents p
-    let (idt :: [ImportDirectoryEntry]) = runGet get $ L.fromStrict $ accessSized s d
-    putStrLn $ "IDT: " <> show idt
+    -- let (idt :: [ImportDirectoryEntry]) = runGet get $ L.fromStrict $ accessSized s d
+    -- putStrLn $ "IDT: " <> show idt
     -- let idt = getAt p getImportDirectoryEntrys (lookupTable iat)
     -- putStrLn $ "IDT data: " <> show (access p (lookupTable iat))
     -- putStrLn $ "IDT: " <> show idt
@@ -54,6 +55,6 @@ main = do
     -- let (name::String) = runGet get $ L.fromStrict $ B.drop nameFileOffset binaryContents
     -- print name
     -- print $ coffHeader p
-    print $ importTables p
+    -- print $ importTables p
     -- runTestTT tests
     pure ()
