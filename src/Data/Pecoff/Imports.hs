@@ -54,7 +54,7 @@ nullImportLookupEntry = NameImportLookupEntry nullRva
 importLookupEntry:: (Integral bits, FiniteBits bits) => bits -> ImportLookupEntry
 importLookupEntry val = 
     let maskBit = finiteBitSize val - 1
-        unmasked = fromIntegral $ clearBit val maskBit
+        unmasked = clearBit val maskBit
     in if testBit val maskBit
         then OrdinalImportLookupEntry $ fromIntegral $ unmasked
         else NameImportLookupEntry    $ RelativeVirtualAddress $ fromIntegral $ unmasked
