@@ -96,8 +96,17 @@ safeAt index list = if index >= 0 && index < length list
     then Just $ list !! index
     else Nothing
 
+isNullDataDir :: DataDirectory -> Bool
+isNullDataDir DataDirectory{..} = address == nullRva && size == 0
+
+-- | Returns Nothing if requested Data Directory does not exists or contains
+-- just null entry.
 dataDirectoryAt :: Int -> OptionalHeader -> Maybe DataDirectory
-dataDirectoryAt i h = safeAt i $ dataDirectories h
+dataDirectoryAt i h = do
+    dataDir <- safeAt i $ dataDirectories h
+    if isNullDataDir dataDir
+        then Nothing
+        else Just dataDir
 
 exportTable           = dataDirectoryAt  0
 importTable           = dataDirectoryAt  1
