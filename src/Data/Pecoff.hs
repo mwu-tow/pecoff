@@ -74,7 +74,8 @@ parsePecoff bs =
 -- | Get pretty description of imports for parsed binary.
 imports :: Pecoff -> [Import]
 imports Pecoff{..} =
-    let idts = concat $ maybeToList $ getAt' sections get <$> importTable optionalHeader
+    let importDataDir = dataDirectory optionalHeader ImportTable
+        idts = concat $ maybeToList $ getAt' sections get <$> importDataDir
     in resolveImport (format optionalHeader) sections <$> idts
 
 -- | Returns filenames of imported dynamic libraries for binary under given path.

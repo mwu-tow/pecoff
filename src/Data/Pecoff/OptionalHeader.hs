@@ -43,7 +43,6 @@ data OptionalHeader = OptionalHeader
 instance Gettable OptionalHeader where
     get = do
         format                   <- get
-        -- let isPE32Plus          = checkIfPE32Plus magic
         let getAddress          = addressGetter format
         majorLinkerVersion      <- getWord8
         minorLinkerVersion      <- getWord8
@@ -91,35 +90,64 @@ instance Gettable OptionalHeader where
             , dataDirectories    = imageDataDirectory
             }
 
+-- | Gets element at a given index. Returns Nothing if the index is out of bounds.
 safeAt :: Int -> [a] -> Maybe a
 safeAt index list = if index >= 0 && index < length list
     then Just $ list !! index
     else Nothing
 
+-- | Data Directory is null, if both its RVA and size are set to 0. Null data
+-- directories are often used to denote that there is no given entry in the
+-- executable.
 isNullDataDir :: DataDirectory -> Bool
 isNullDataDir DataDirectory{..} = address == nullRva && size == 0
 
--- | Returns Nothing if requested Data Directory does not exists or contains
--- just null entry.
-dataDirectoryAt :: Int -> OptionalHeader -> Maybe DataDirectory
-dataDirectoryAt i h = do
+-- | Obtains 'DataDirectory' by given index. Returns Nothing if index is out of
+-- bounds or if the requested Data Directory is null.
+dataDirectoryAt :: OptionalHeader -> Int -> Maybe DataDirectory
+dataDirectoryAt h i = do
     dataDir <- safeAt i $ dataDirectories h
     if isNullDataDir dataDir
         then Nothing
         else Just dataDir
 
-exportTable           = dataDirectoryAt  0
-importTable           = dataDirectoryAt  1
-resourceTable         = dataDirectoryAt  2
-exceptionTable        = dataDirectoryAt  3
-certificateTable      = dataDirectoryAt  4
-baseRelocationTable   = dataDirectoryAt  5
-debug                 = dataDirectoryAt  6
-architecture          = dataDirectoryAt  7
-globalPtr             = dataDirectoryAt  8
-tlsTable              = dataDirectoryAt  9
-loadConfigTable       = dataDirectoryAt 10
-boundImport           = dataDirectoryAt 11
-iat                   = dataDirectoryAt 12
-delayImportDescriptor = dataDirectoryAt 13
-clrRuntimeHeader      = dataDirectoryAt 14
+-- | 'DataDirectory' denotes a data block within an executable. PE/COFF image
+-- comes with a set of optional, predefined data directories. This structure
+-- identifies each of these predefined entries. See 'dataDirectory'.
+data WhichDataDirectory 
+    = ExportTable
+    | ImportTable
+    | ResourceTable
+    | ExceptionTable
+    | CertificateTable
+    | BaseRelocationTable
+    | Debug
+    | Architecture
+    | GlobalPtr
+    | TlsTable
+    | LoadConfigTable
+    | BoundImport
+    | ImportAddressTable
+    | DelayImportDescriptor
+    | ClrRuntimeHeader
+    deriving (Show, Eq)
+
+-- | Obtains requested non-null data directory.
+-- See https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#optional-header-data-directories-image-only
+dataDirectory :: OptionalHeader -> WhichDataDirectory -> Maybe DataDirectory
+dataDirectory header which = dataDirectoryAt header $ case which of
+    ExportTable           ->  0
+    ImportTable           ->  1
+    ResourceTable         ->  2
+    ExceptionTable        ->  3
+    CertificateTable      ->  4
+    BaseRelocationTable   ->  5
+    Debug                 ->  6
+    Architecture          ->  7
+    GlobalPtr             ->  8
+    TlsTable              ->  9
+    LoadConfigTable       -> 10
+    BoundImport           -> 11
+    ImportAddressTable    -> 12
+    DelayImportDescriptor -> 13
+    ClrRuntimeHeader      -> 14
