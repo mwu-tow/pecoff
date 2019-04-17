@@ -6,9 +6,9 @@ import Data.Pecoff.Enum
 -- | The PE file format, as contained in
 --   'Data.Pecoff.OptionalHeader.OptionalHeader'. PE32+ images allow for a
 --   64-bit address space while limiting the image size to 2 gigabytes. 
-data PEFormat = PE32  -- ^ PE32 executable
-              | ROMImage  -- ^ ROM image
-              | PE32Plus  -- ^ PE32+ (64 bit) executable
+data PEFormat = PE32  -- ^ PE32 executable.
+              | ROMImage  -- ^ ROM image.
+              | PE32Plus  -- ^ PE32+ (64 bit) executable.
     deriving (Show, Eq)
 
 instance BinaryRepresentible PEFormat where
