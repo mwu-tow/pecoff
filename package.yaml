@@ -1,4 +1,4 @@
-name: pecoff
+name: pecoff-fork
 version: '0.2'
 synopsis: Parser for PE/COFF format.
 description: Parser for PE/COFF format.
@@ -14,6 +14,7 @@ dependencies:
 - binary
 - time
 - transformers
+ghc-options: -Werror -Wmissing-fields
 library:
   source-dirs: src
 tests:
@@ -32,6 +33,7 @@ default-extensions:
   FlexibleContexts
   FlexibleInstances
   InstanceSigs
+  OverloadedStrings
   RankNTypes
   RecordWildCards
   ScopedTypeVariables

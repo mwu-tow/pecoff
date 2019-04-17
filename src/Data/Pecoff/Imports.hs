@@ -1,16 +1,15 @@
 module Data.Pecoff.Imports where
 
-import Data.Pecoff.Gettable
-import Data.Pecoff.RVA
-import Data.Pecoff.Enums.Format
-
 import Data.Time.Clock
 import Data.Int
 import Data.Word
 import Data.Bits
 import Data.Binary.Get
 
-import Debug.Trace
+import Data.Pecoff.Gettable
+import Data.Pecoff.RVA
+import Data.Pecoff.Enums.Format
+import Data.Pecoff.Utils
 
 -- | The import table entry — referencing a single DLL dependency of the image.
 data ImportDirectoryEntry = ImportDirectoryEntry
@@ -25,10 +24,12 @@ data ImportDirectoryEntry = ImportDirectoryEntry
 instance Gettable ImportDirectoryEntry where
     get = ImportDirectoryEntry <$> get <*> get <*> get <*> get <*> get
 
--- | The import directory table consists of an array of import directory entries, one entry for each DLL to which the image refers.
+-- | The import directory table consists of an array of import directory
+--   entries, one entry for each DLL to which the image refers.
 type ImportDirectoryTable = [ImportDirectoryEntry]
 
--- | Table is sequence of entries terminated by an entry with null nameAddress RVA.
+-- | Table is sequence of entries terminated by an entry with null nameAddress
+--   RVA.
 instance Gettable ImportDirectoryTable where
     get = repeatUntil get $ (== nullRva) . nameAddress
 
@@ -38,8 +39,10 @@ data ImportLookupEntry
     | NameImportLookupEntry RelativeVirtualAddress
     deriving (Show, Eq)
  
+-- | Description of all imports from a given DLL.
 type ImportLookupTable = [ImportLookupEntry]
 
+-- | Description of the by name import.
 data ImportHintNameEntry = ImportHintNameEntry
     { hint :: Word16 -- ^ An index into the export name pointer table. A match is attempted first with this value. If it fails, a binary search is performed on the DLL's export name pointer table. 
     , importName :: String -- ^ An ASCII string that contains the name to import. This is the string that must be matched to the public name in the DLL. This string is case sensitive.
@@ -49,9 +52,11 @@ data ImportHintNameEntry = ImportHintNameEntry
 instance Gettable ImportHintNameEntry where
     get = ImportHintNameEntry <$> get <*> get
 
+-- | Empty entry, terminating the 'ImportLookupTable'.
+nullImportLookupEntry :: ImportLookupEntry
 nullImportLookupEntry = NameImportLookupEntry nullRva
 
-importLookupEntry:: (Integral bits, FiniteBits bits) => bits -> ImportLookupEntry
+importLookupEntry :: (Integral bits, FiniteBits bits) => bits -> ImportLookupEntry
 importLookupEntry val = 
     let maskBit = finiteBitSize val - 1
         unmasked = clearBit val maskBit
@@ -59,18 +64,11 @@ importLookupEntry val =
         then OrdinalImportLookupEntry $ fromIntegral $ unmasked
         else NameImportLookupEntry    $ RelativeVirtualAddress $ fromIntegral $ unmasked
 
-repeatUntil :: (Monad m) => m a -> (a -> Bool) -> m [a]
-repeatUntil getter stopCondition = do
-    value <- getter
-    if stopCondition value
-        then pure []
-        else (value :) <$> repeatUntil getter stopCondition
-
 getImportLookupEntry :: PEFormat -> Get ImportLookupEntry
 getImportLookupEntry PE32Plus  = importLookupEntry <$> getWord64le
 getImportLookupEntry _ = importLookupEntry <$> getWord32le
   
-getImportEntries :: PEFormat -> Get [ImportLookupEntry]
+getImportEntries :: PEFormat -> Get ImportLookupTable
 getImportEntries peformat = repeatUntil (getImportLookupEntry peformat) (== nullImportLookupEntry)
 
 -- | User-friendly description of an imported DLL.
@@ -80,23 +78,27 @@ data Import = Import
     }
     deriving (Show, Eq)
 
+-- | User-friendly description of a symbol imported from DLL.
 data ImportedSymbol 
     = FunctionName String -- ^ Import by name
     | FunctionOrdinal Int -- ^ Import by ordinal value
     deriving (Show, Eq)
 
+-- | Convert imported function to a user-friendly form.
 resolveLookupEntry :: (Addressable a) => a -> ImportLookupEntry -> ImportedSymbol
 resolveLookupEntry _ (OrdinalImportLookupEntry ordinal) = FunctionOrdinal $ fromIntegral ordinal
 resolveLookupEntry s (NameImportLookupEntry nameHintRva) = 
     let nameHintEntry = getAt s get nameHintRva
     in FunctionName (importName nameHintEntry)
 
+-- | Translate import dependency description to a user-friendly form.
 resolveImport :: (Addressable a) => PEFormat -> a -> ImportDirectoryEntry -> Import
-resolveImport peformat s idt = 
-    let libraryName = getAt s get $ nameAddress idt
-        entries = getAt s (getImportEntries peformat) (importAddressTable idt)
+resolveImport peformat s idt = Import{..} where
+    libraryName = getAt s get $ nameAddress idt
+    entriesToResolve = getAt s (getImportEntries peformat) (lookupTable idt)
+    entries = resolveLookupEntry s <$> entriesToResolve
 
-    in Import
-        { libraryName = libraryName
-        , entries = resolveLookupEntry s <$> entries
-        }
+-- | Get pretty description of imports for parsed binary.
+getImports :: (AddressSize chunkAddress, Addressable addressable) => PEFormat -> chunkAddress -> addressable -> [Import]
+getImports peFormat idtAddress addressable = resolveImport peFormat addressable <$> idts
+    where idts = getAt' addressable get idtAddress

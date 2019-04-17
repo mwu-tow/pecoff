@@ -1,10 +1,10 @@
-module Data.Pecoff.Gettable (Gettable(..)) where
+module Data.Pecoff.Gettable (Gettable(..), runGet') where
 
 import Data.Binary (encode, Binary)
 import Data.Binary.Get (Get, runGet, getWord8, getWord16le, getWord32le, getWord64le, isEmpty)
 import Control.Monad
-import Data.Time.Clock
-import Data.Time.Clock.POSIX
+import Data.Time.Clock (UTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Bits
 import Data.Char (chr)
 import Data.Int
@@ -12,6 +12,8 @@ import Data.Word
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as L
+
+import Data.Pecoff.Utils
 
 -- | Class for datatypes that can be binary deserialized from a PE/COFF file.
 class Gettable a where
@@ -21,11 +23,11 @@ class Gettable a where
     -- getFrom :: (Binary b) => b -> a
     -- getFrom b = getLBS (encode b)
 
-    -- | Loads value from strict 'B.ByteString'
+    -- | Deserialize value from a strict 'B.ByteString'
     getBS :: B.ByteString -> a
     getBS = runGet get . L.fromStrict 
 
-    -- | Loads value from lazy 'B.ByteString'
+    -- | Deserialize value from a lazy 'B.ByteString'
     getLBS :: L.ByteString -> a
     getLBS = runGet get
 

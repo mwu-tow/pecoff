@@ -54,7 +54,3 @@ getAt s g a = runGet' g $ access s $ address a
 
 getAt' :: (Addressable d, AddressSize a) => d -> Get b -> a -> b
 getAt' s g a = runGet' g $ accessSized s a
-
--- | like 'runGet' but working on strict 'ByteString'
-runGet' :: Get a -> ByteString -> a
-runGet' g bs = runGet g $ L.fromStrict bs

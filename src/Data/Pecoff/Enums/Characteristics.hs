@@ -24,7 +24,7 @@ data Characteristics
     deriving (Show, Eq)
 instance BinaryRepresentible Characteristics where
     type Representation Characteristics = Word16
-instance MyEnum Characteristics where
+instance Enumeration Characteristics where
     mapping = 
         [ (0x0001, IMAGE_FILE_RELOCS_STRIPPED)
         , (0x0002, IMAGE_FILE_EXECUTABLE_IMAGE)

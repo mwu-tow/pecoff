@@ -2,7 +2,7 @@ module Data.Pecoff.Enums.SectionCharacteristics where
 
 import Data.Pecoff.Enum
 
--- | Represents the image section header format.
+-- | The flags that describe the characteristics of the 'Data.Pecoff.Section.Section'. 
 data SectionCharacteristics
     = IMAGE_SCN_TYPE_NO_PAD -- ^ The section should not be padded to the next boundary. This flag is obsolete and is replaced by IMAGE_SCN_ALIGN_1BYTES. This is valid only for object files. 
     | IMAGE_SCN_CNT_CODE -- ^ The section contains executable code. 
@@ -42,7 +42,7 @@ data SectionCharacteristics
     deriving (Show, Eq)
 instance BinaryRepresentible SectionCharacteristics where
     type Representation SectionCharacteristics = Word32
-instance MyEnum SectionCharacteristics where
+instance Enumeration SectionCharacteristics where
     mapping = 
         [ (0x00000008, IMAGE_SCN_TYPE_NO_PAD)
         , (0x00000020, IMAGE_SCN_CNT_CODE )

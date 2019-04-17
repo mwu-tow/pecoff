@@ -1,5 +1,6 @@
 module Data.Pecoff.OptionalHeader where
 
+import Data.Pecoff.DataDirectory
 import Data.Pecoff.Gettable
 import Data.Pecoff.Enum
 import Data.Pecoff.Enums.Format
@@ -12,18 +13,6 @@ import Data.Word
 import Data.Binary.Get
 import Control.Monad
 import Data.List
-
-data DataDirectory = DataDirectory
-  { address :: RelativeVirtualAddress
-  , size    :: Int32
-  }
-  deriving (Show, Eq)
-
-instance AddressSize DataDirectory where
-    addressSize DataDirectory{..} = (address, fromIntegral size)
-
-instance Gettable DataDirectory where
-    get = DataDirectory <$> get <*> get
 
 -- | Optional header with information for loader. Despite its name it is required for all image files. It is optional e.g. for object files.
 data OptionalHeader = OptionalHeader 
@@ -96,12 +85,6 @@ safeAt index list = if index >= 0 && index < length list
     then Just $ list !! index
     else Nothing
 
--- | Data Directory is null, if both its RVA and size are set to 0. Null data
--- directories are often used to denote that there is no given entry in the
--- executable.
-isNullDataDir :: DataDirectory -> Bool
-isNullDataDir DataDirectory{..} = address == nullRva && size == 0
-
 -- | Obtains 'DataDirectory' by given index. Returns Nothing if index is out of
 -- bounds or if the requested Data Directory is null.
 dataDirectoryAt :: OptionalHeader -> Int -> Maybe DataDirectory
@@ -110,27 +93,6 @@ dataDirectoryAt h i = do
     if isNullDataDir dataDir
         then Nothing
         else Just dataDir
-
--- | 'DataDirectory' denotes a data block within an executable. PE/COFF image
--- comes with a set of optional, predefined data directories. This structure
--- identifies each of these predefined entries. See 'dataDirectory'.
-data WhichDataDirectory 
-    = ExportTable
-    | ImportTable
-    | ResourceTable
-    | ExceptionTable
-    | CertificateTable
-    | BaseRelocationTable
-    | Debug
-    | Architecture
-    | GlobalPtr
-    | TlsTable
-    | LoadConfigTable
-    | BoundImport
-    | ImportAddressTable
-    | DelayImportDescriptor
-    | ClrRuntimeHeader
-    deriving (Show, Eq)
 
 -- | Obtains requested non-null data directory.
 -- See https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#optional-header-data-directories-image-only

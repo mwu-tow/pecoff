@@ -2,8 +2,9 @@ module Data.Pecoff.Enums.DllCharacteristics where
 
 import Data.Pecoff.Enum
 
--- | The following values are defined for the 'dllCharactertics' field of the
--- 'OptionalHeader'.
+-- | The following values are defined for the
+-- 'Data.Pecoff.Header.dllCharactertics' field of the
+-- 'Data.Pecoff.Header.OptionalHeader'.
 data DllCharacteristics
     = IMAGE_DLL_CHARACTERISTICS_HIGH_ENTROPY_VA  -- ^ Image can handle a high entropy 64-bit virtual address space. 
     | IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE -- ^ DLL can be relocated at load time. 
@@ -19,7 +20,7 @@ data DllCharacteristics
     deriving (Show, Eq)
 instance BinaryRepresentible DllCharacteristics where
     type Representation DllCharacteristics = Word16
-instance MyEnum DllCharacteristics where
+instance Enumeration DllCharacteristics where
     mapping = 
         [ (0x0020, IMAGE_DLL_CHARACTERISTICS_HIGH_ENTROPY_VA)
         , (0x0040, IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE)
